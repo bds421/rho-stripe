@@ -8,7 +8,7 @@ versioning follows [SemVer](https://semver.org/).
 
 _No changes yet._
 
-## [0.1.0] - TBD
+## [0.1.0] - 2026-05-28
 
 Initial public release. See the [README](./README.md) for capabilities, the
 [`docs/howto/`](./docs/howto/) guides for integration walkthroughs, and the
