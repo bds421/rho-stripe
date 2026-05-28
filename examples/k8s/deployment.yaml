@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rho-stripe-app
+  namespace: default
+  labels: { app: rho-stripe-app }
+spec:
+  replicas: 3
+  selector:
+    matchLabels: { app: rho-stripe-app }
+  template:
+    metadata:
+      labels: { app: rho-stripe-app }
+    spec:
+      containers:
+        - name: app
+          image: your-registry/your-app:latest  # build from cmd/example-webhook or your own
+          ports:
+            - { containerPort: 8080, name: http }
+          env:
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: rho-stripe-secrets, key: STRIPE_SECRET_KEY }
+            - name: STRIPE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef: { name: rho-stripe-secrets, key: STRIPE_WEBHOOK_SECRET }
+            - name: STRIPE_WEBHOOK_SECRET_OLD
+              valueFrom:
+                secretKeyRef: { name: rho-stripe-secrets, key: STRIPE_WEBHOOK_SECRET_OLD }
+            - name: POSTGRES_DSN
+              valueFrom:
+                secretKeyRef: { name: rho-stripe-secrets, key: POSTGRES_DSN }
+            - name: APP_NAMESPACE
+              valueFrom:
+                configMapKeyRef: { name: rho-stripe-config, key: APP_NAMESPACE }
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits:   { cpu: 500m, memory: 512Mi }
+          # Critical: long enough for Stripe's 10s timeout + queue
+          # draining on shutdown.
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "10"]
+      terminationGracePeriodSeconds: 30

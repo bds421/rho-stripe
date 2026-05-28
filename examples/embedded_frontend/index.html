@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Embedded Checkout Demo — stripe-connector</title>
+    <style>
+        body { font: 14px/1.4 system-ui, -apple-system, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; }
+        h1 { font-size: 18px; }
+        button { padding: 10px 18px; font-size: 14px; cursor: pointer; }
+        #checkout { margin-top: 24px; min-height: 400px; }
+        .meta { color: #666; font-size: 12px; margin-top: 12px; }
+    </style>
+</head>
+<body>
+    <h1>Embedded Checkout Demo</h1>
+    <p>
+        This page demonstrates the Go <code>stripe-connector</code> library returning a
+        <code>client_secret</code> for a Stripe Checkout Session in <code>UIMode=embedded</code>
+        mode, which the browser then mounts inline via Stripe.js.
+    </p>
+    <p>
+        Test card: <code>4242 4242 4242 4242</code> (any future expiry, any CVC, any postal code).
+    </p>
+
+    <button id="start">Start checkout</button>
+    <div id="checkout"></div>
+    <p class="meta">Once the form completes, Stripe redirects to the return URL configured server-side.</p>
+
+    <script src="https://js.stripe.com/v3/"></script>
+    <script>
+        const stripe = Stripe(window.STRIPE_PUBLISHABLE_KEY);
+
+        document.getElementById('start').addEventListener('click', async () => {
+            const res = await fetch('/create-checkout-session', { method: 'POST' });
+            if (!res.ok) {
+                document.getElementById('checkout').innerText = 'Failed to create session: ' + await res.text();
+                return;
+            }
+            const { client_secret: clientSecret } = await res.json();
+            const checkout = await stripe.initEmbeddedCheckout({ clientSecret });
+            checkout.mount('#checkout');
+        });
+    </script>
+    <script>
+        // The server template injects this constant; see server.go.
+        // Falls back to a clearly-fake value so the page doesn't 500
+        // when opened directly.
+        window.STRIPE_PUBLISHABLE_KEY = window.STRIPE_PUBLISHABLE_KEY || 'pk_test_placeholder_replace_me';
+    </script>
+</body>
+</html>

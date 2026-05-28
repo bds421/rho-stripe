@@ -1,0 +1,31 @@
+# Ingress for the webhook endpoint. TLS-terminated. Restrict source
+# IPs to Stripe's published webhook ranges
+# (https://docs.stripe.com/ips) via your edge / load balancer
+# annotations.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rho-stripe-app
+  namespace: default
+  annotations:
+    # Example for nginx-ingress; adjust for your controller.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-body-size: "1m"
+    # IMPORTANT: don't strip or buffer the request body — the lib
+    # verifies the raw bytes. The default works; document the
+    # constraint here as a reminder.
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [api.your-domain.com]
+      secretName: api-tls
+  rules:
+    - host: api.your-domain.com
+      http:
+        paths:
+          - path: /webhook
+            pathType: Exact
+            backend:
+              service:
+                name: rho-stripe-app
+                port: { name: http }

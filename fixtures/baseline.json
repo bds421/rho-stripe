@@ -1,0 +1,95 @@
+{
+  "_meta": {
+    "template_version": 0,
+    "description": "Baseline Stripe test-mode dataset for stripe-connector contributors and CI. Apply with `stripe fixtures fixtures/baseline.json --api-key $STRIPE_SECRET_KEY`. Produces the equivalent state as running `stripe-connector sync --apply` against the demo catalog in cmd/example-sync/main.go, with two product types (recurring + credit-pack one-time) and two coupons. Namespace: scdemo."
+  },
+  "fixtures": [
+    {
+      "name": "pro_plan_product",
+      "path": "/v1/products",
+      "method": "post",
+      "params": {
+        "id": "prod_scdemo_pro_plan",
+        "name": "Demo Pro Plan",
+        "description": "Baseline fixture: recurring subscription product.",
+        "tax_code": "txcd_10000000",
+        "metadata": {"app_namespace": "scdemo"}
+      }
+    },
+    {
+      "name": "pro_plan_monthly_eur",
+      "path": "/v1/prices",
+      "method": "post",
+      "params": {
+        "lookup_key": "scdemo.pro_plan.monthly_eur",
+        "currency": "eur",
+        "unit_amount": 4900,
+        "product": "${pro_plan_product:id}",
+        "recurring": {"interval": "month"},
+        "metadata": {"app_namespace": "scdemo"}
+      }
+    },
+    {
+      "name": "pro_plan_yearly_eur",
+      "path": "/v1/prices",
+      "method": "post",
+      "params": {
+        "lookup_key": "scdemo.pro_plan.yearly_eur",
+        "currency": "eur",
+        "unit_amount": 49000,
+        "product": "${pro_plan_product:id}",
+        "recurring": {"interval": "year"},
+        "metadata": {"app_namespace": "scdemo"}
+      }
+    },
+    {
+      "name": "credit_pack_product",
+      "path": "/v1/products",
+      "method": "post",
+      "params": {
+        "id": "prod_scdemo_credit_pack_1000_ai",
+        "name": "1000 Demo AI Credits",
+        "description": "Baseline fixture: one-time credit pack.",
+        "tax_code": "txcd_10000000",
+        "metadata": {"app_namespace": "scdemo"}
+      }
+    },
+    {
+      "name": "credit_pack_default",
+      "path": "/v1/prices",
+      "method": "post",
+      "params": {
+        "lookup_key": "scdemo.credit_pack_1000_ai.default",
+        "currency": "eur",
+        "unit_amount": 1000,
+        "product": "${credit_pack_product:id}",
+        "metadata": {"app_namespace": "scdemo"}
+      }
+    },
+    {
+      "name": "coupon_save20_percent",
+      "path": "/v1/coupons",
+      "method": "post",
+      "params": {
+        "id": "SAVE20_scdemo",
+        "name": "20% off (one time)",
+        "percent_off": 20,
+        "duration": "once",
+        "metadata": {"app_namespace": "scdemo"}
+      }
+    },
+    {
+      "name": "coupon_save500_eur",
+      "path": "/v1/coupons",
+      "method": "post",
+      "params": {
+        "id": "WELCOME500EUR_scdemo",
+        "name": "€5.00 off (one time)",
+        "amount_off": 500,
+        "currency": "eur",
+        "duration": "once",
+        "metadata": {"app_namespace": "scdemo"}
+      }
+    }
+  ]
+}

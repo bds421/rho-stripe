@@ -1,0 +1,41 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Go
+*.test
+*.out
+coverage.html
+vendor/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Build artifacts
+/dist/
+/bin/
+
+# Belt-and-suspenders: a developer running `go build .` in the root
+# can end up with a binary named after the module. Don't commit it.
+/rho-stripe
+/stripe-connector
+/example-webhook
+/embedded_frontend
+
+# Stripe-specific patterns: anything that looks like a key.
+# Pre-commit hooks should also enforce this — see CONTRIBUTING.md.
+*sk_test_*
+*sk_live_*
+*whsec_*
+
+# Go workspace files (developer-local convenience, not part of the
+# published module). Adopters checking out this repo on their own
+# tree would see warnings about missing local paths if go.work were
+# tracked.
+go.work
+go.work.sum

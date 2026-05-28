@@ -1,0 +1,27 @@
+# Runs `rho-stripe drift-check` once a day. Failure (drift
+# detected) → CronJob marks the pod failed → alerts via your
+# Prometheus / Datadog scrape of kube_job_status_failed.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rho-stripe-drift-check
+  namespace: default
+spec:
+  schedule: "0 7 * * *"           # daily 07:00 UTC
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: drift-check
+              image: your-registry/your-app:latest
+              command: ["./your-app-binary", "drift-check"]
+              env:
+                - name: STRIPE_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef: { name: rho-stripe-secrets, key: STRIPE_SECRET_KEY }

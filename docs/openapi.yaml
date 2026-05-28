@@ -1,0 +1,278 @@
+# OpenAPI 3.1 fragment documenting the HTTP endpoints apps typically
+# expose when using rho-stripe. The library itself is a Go
+# package, not an HTTP server — so this file is NOT served by the
+# library. It exists as a copy-paste source for apps that document
+# their own checkout/portal/webhook endpoints in OpenAPI/Swagger.
+#
+# Merge the relevant paths into your app's openapi.yaml and adjust
+# field names / auth / examples to match your conventions.
+openapi: 3.1.0
+info:
+  title: rho-stripe HTTP endpoints (fragment)
+  version: "1.0"
+  description: |
+    HTTP-level shapes used by apps that wrap rho-stripe behind
+    REST endpoints. The library does not impose these specific shapes —
+    apps choose paths and field names — but these are the canonical
+    integrations.
+
+paths:
+  /webhook:
+    post:
+      summary: Stripe webhook receiver
+      description: |
+        Stripe sends event POSTs to this URL. The body is the raw event
+        JSON; the `Stripe-Signature` header carries the HMAC signature.
+        Pass the request straight to `conn.Webhooks.Handle` — no body
+        parsing or framework middleware that mutates bytes.
+      parameters:
+        - in: header
+          name: Stripe-Signature
+          required: true
+          schema:
+            type: string
+          description: HMAC signature Stripe computes over the raw body. Required.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Stripe Event object (see stripe.com/docs/api/events/object).
+      responses:
+        "200":
+          description: Event accepted (handler ran successfully, or duplicate/no-op).
+        "400":
+          description: Signature verification failed or event id reused with different body.
+        "500":
+          description: Handler returned an error — Stripe will retry per its schedule.
+
+  /checkout:
+    post:
+      summary: Create a Checkout Session (hosted or embedded)
+      description: |
+        Wraps `conn.Checkout.CreateSession`. Apps usually authenticate
+        the user, derive Subject from session, and call the library.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckoutRequest"
+      responses:
+        "200":
+          description: Session created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckoutResponse"
+        "400":
+          description: Validation failed (unknown price key, missing fields, etc.).
+        "401":
+          description: Unauthenticated.
+
+  /portal:
+    post:
+      summary: Create a Customer Portal session
+      description: |
+        Wraps `conn.Checkout.CreatePortalSession`. Apps pass the
+        authenticated user's Stripe Customer id; the library returns
+        a one-time portal URL.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [customer, return_url]
+              properties:
+                customer:
+                  type: string
+                  description: Stripe Customer id (cus_…).
+                return_url:
+                  type: string
+                  format: uri
+                  description: Where Stripe sends the customer after they finish.
+      responses:
+        "200":
+          description: Portal session created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  url:
+                    type: string
+                    format: uri
+
+  /billing/invoices:
+    get:
+      summary: List the authenticated customer's invoices
+      description: |
+        Wraps `conn.Invoices.ListForCustomer`. Apps usually derive the
+        Stripe Customer id from the authenticated session.
+      parameters:
+        - in: query
+          name: status
+          required: false
+          schema:
+            type: string
+            enum: [draft, open, paid, void, uncollectible]
+          description: Optional filter.
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Invoice list, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Invoice"
+
+  /subscriptions/{id}/preview:
+    post:
+      summary: Preview a subscription migration (proration)
+      description: |
+        Wraps `conn.Subscriptions.PreviewMigrate`. Returns the prorated
+        amount due now + the next-billing total so the app can show a
+        confirmation modal before committing.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from_price_key, to_price_key]
+              properties:
+                from_price_key:
+                  type: string
+                to_price_key:
+                  type: string
+                prorate:
+                  type: boolean
+                  default: true
+      responses:
+        "200":
+          description: Preview produced.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MigratePreview"
+
+components:
+  schemas:
+    CheckoutRequest:
+      type: object
+      required: [line_items]
+      properties:
+        line_items:
+          type: array
+          items:
+            type: object
+            required: [price_key]
+            properties:
+              price_key:
+                type: string
+                description: catalog-relative price key, e.g. "standard.monthly_eur"
+              quantity:
+                type: integer
+                default: 1
+        promo_code:
+          type: string
+          description: Optional customer-facing promo code.
+        ui_mode:
+          type: string
+          enum: [hosted, embedded]
+          default: hosted
+        return_url:
+          type: string
+          description: Required when ui_mode=embedded.
+        success_url:
+          type: string
+          description: Required when ui_mode=hosted.
+        cancel_url:
+          type: string
+          description: Required when ui_mode=hosted.
+
+    CheckoutResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Stripe Checkout Session id (cs_…)
+        url:
+          type: string
+          description: Hosted page URL (present when ui_mode=hosted).
+        client_secret:
+          type: string
+          description: Pass to Stripe.js initEmbeddedCheckout (present when ui_mode=embedded).
+
+    Invoice:
+      type: object
+      properties:
+        stripe_id:
+          type: string
+        number:
+          type: string
+        status:
+          type: string
+          enum: [draft, open, paid, void, uncollectible]
+        currency:
+          type: string
+        amount_total:
+          type: integer
+          description: smallest currency unit
+        amount_paid:
+          type: integer
+        due_date:
+          type: string
+          format: date-time
+          nullable: true
+        hosted_invoice_url:
+          type: string
+        pdf_url:
+          type: string
+
+    MigratePreview:
+      type: object
+      properties:
+        currency:
+          type: string
+        amount_due_now:
+          type: integer
+          description: smallest currency unit; can be negative (proration credit)
+        amount_subtotal:
+          type: integer
+        amount_tax:
+          type: integer
+        next_billing_total:
+          type: integer
+        next_billing_at:
+          type: string
+          format: date-time
+        proration_line_items:
+          type: array
+          items:
+            type: object
+            properties:
+              description:
+                type: string
+              amount:
+                type: integer
+              price_id:
+                type: string

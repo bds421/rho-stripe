@@ -1,0 +1,29 @@
+# Builds cmd/example-webhook for docker-compose.yml.
+# Multi-stage build so the runtime image is minimal.
+
+FROM golang:1.26-alpine AS build
+
+WORKDIR /src
+
+# Replace directives in go.mod point to ../rho-kit/* on dev machines.
+# For the Docker build we assume rho-kit has been vendored or that
+# the replace directives have been removed (see CHANGELOG / known
+# limitations). Otherwise the build will fail with "missing rho-kit".
+COPY go.mod go.sum ./
+COPY repos/postgres/go.mod repos/postgres/go.sum repos/postgres/
+RUN go mod download || true
+
+COPY . .
+
+RUN CGO_ENABLED=0 go build -o /out/example-webhook ./cmd/example-webhook
+
+# ---
+
+FROM gcr.io/distroless/static-debian12 AS runtime
+
+WORKDIR /app
+COPY --from=build /out/example-webhook /app/example-webhook
+
+EXPOSE 8080
+
+ENTRYPOINT ["/app/example-webhook"]

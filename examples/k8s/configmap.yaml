@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rho-stripe-config
+  namespace: default
+data:
+  APP_NAMESPACE: "myapp"
+  WEBHOOK_QUEUE_WORKERS: "4"
+  WEBHOOK_QUEUE_CAPACITY: "256"
+  DRIFT_CHECK_INTERVAL: "15m"

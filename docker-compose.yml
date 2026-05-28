@@ -1,0 +1,70 @@
+# Local dev stack for rho-stripe.
+#
+# Brings up:
+#   - postgres: Postgres 16 on :5433 (matches the integration test DSN)
+#   - example-webhook: the cmd/example-webhook server on :8080
+#   - stripe-cli: a stripe listen forwarder that POSTs events to the
+#     example-webhook server (so you can test the full pipeline without
+#     a public URL).
+#
+# Usage:
+#
+#   # 1. Provide your test-mode keys (gitignored .env).
+#   cat > .env <<'EOF'
+#   STRIPE_SECRET_KEY=sk_test_...
+#   STRIPE_PUBLISHABLE_KEY=pk_test_...
+#   EOF
+#
+#   # 2. Start the stack.
+#   docker compose up
+#
+#   # 3. Copy the whsec_ printed by the stripe-cli container, then in
+#   #    another terminal redeploy example-webhook with it:
+#   STRIPE_WEBHOOK_SECRET=whsec_... docker compose up example-webhook
+#
+#   # 4. Trigger an event:
+#   docker compose exec stripe-cli stripe trigger checkout.session.completed
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: scctest
+      POSTGRES_DB: postgres
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+
+  example-webhook:
+    build:
+      context: .
+      dockerfile: Dockerfile.example
+    environment:
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-whsec_placeholder_run_again_with_real_secret}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  stripe-cli:
+    image: stripe/stripe-cli:latest
+    environment:
+      STRIPE_API_KEY: ${STRIPE_SECRET_KEY}
+    command:
+      - listen
+      - --forward-to
+      - example-webhook:8080/webhook
+      - --skip-verify  # we trust localhost-side TLS
+    depends_on:
+      - example-webhook
+
+volumes:
+  pg-data:

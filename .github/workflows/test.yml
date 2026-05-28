@@ -1,0 +1,142 @@
+# Test workflow. Intentionally avoids untrusted-input interpolation
+# (no ${{ github.event.* }} in run: steps) to sidestep command-injection
+# risks per
+# https://github.blog/security/vulnerability-research/how-to-catch-github-actions-workflow-injections-before-attackers-do/
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit:
+    name: Unit tests + race detector
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          check-latest: true
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ runner.os }}-go-
+      - name: go mod verify
+        run: go mod verify
+      - name: go vet
+        run: go vet ./...
+      - name: staticcheck
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+          staticcheck ./...
+      - name: go build
+        run: go build ./...
+      - name: Unit tests
+        run: go test -count=1 -timeout 90s ./...
+      - name: Race detector (critical packages)
+        run: go test -race -count=1 -timeout 180s ./webhooks/... ./catalog/... ./subscriptions/... ./connector/... ./invoices/... ./payments/... ./observability/... ./customers/... ./paymentmethods/... ./disputes/... ./quotes/... ./checkout/portalconfig/... ./clock/... ./stripeapi/... ./credits/...
+
+  postgres:
+    name: Postgres integration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: scctest
+          POSTGRES_DB: postgres
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          check-latest: true
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ runner.os }}-go-
+      - name: Postgres integration tests
+        working-directory: repos/postgres
+        env:
+          STRIPE_CONNECTOR_PG_DSN: postgres://postgres:scctest@localhost:5433/postgres?sslmode=disable
+        run: go test -tags=postgres_integration -count=1 -timeout 120s ./...
+
+  fuzz:
+    name: Fuzz smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          check-latest: true
+      - name: Fuzz - refund parser (10s)
+        run: go test -fuzz=FuzzApplyRefundReversal -fuzztime=10s -run=NoneShouldMatch ./credits/
+      - name: Fuzz - webhook handle (10s)
+        run: go test -fuzz=FuzzHandleSignedArbitraryBody -fuzztime=10s -run=NoneShouldMatch ./webhooks/
+
+  live:
+    name: Live Stripe (test mode)
+    # Live tests are opt-in: they only run when STRIPE_SECRET_KEY is
+    # present in repo secrets AND on pushes to main (not PRs from
+    # forks, which don't have secret access).
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          check-latest: true
+      - name: Check for STRIPE_SECRET_KEY
+        id: check_key
+        env:
+          KEY_SET: ${{ secrets.STRIPE_SECRET_KEY != '' }}
+        run: |
+          if [ "$KEY_SET" = "true" ]; then
+            echo "have_key=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "have_key=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::STRIPE_SECRET_KEY not set in repo secrets; skipping live tests."
+          fi
+      - name: Cache Go modules
+        if: steps.check_key.outputs.have_key == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ runner.os }}-go-
+      - name: Pre-test cleanup (purge stale live_test_run artifacts)
+        if: steps.check_key.outputs.have_key == 'true'
+        env:
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          LIVE_CLEANUP: "true"
+        run: go test -tags=live_stripe -count=1 -run TestLive_CleanupAll -timeout 300s .
+      - name: Live tests
+        if: steps.check_key.outputs.have_key == 'true'
+        env:
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+        run: go test -tags=live_stripe -count=1 -timeout 600s -run 'TestLive_' .
+
+  # Run live tests locally during development with:
+  #   set -a; source .env; set +a
+  #   go test -tags=live_stripe -v -run TestLive .
