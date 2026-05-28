@@ -3,15 +3,15 @@ module github.com/bds421/rho-stripe/repos/postgres
 go 1.26.2
 
 require (
-	github.com/bds421/rho-kit/data/idempotency/pgstore/v2 v2.0.1
+	github.com/bds421/rho-kit/data/idempotency/pgstore/v2 v2.0.2
 	github.com/bds421/rho-kit/data/lock/pgadvisory/v2 v2.0.1
-	github.com/bds421/rho-kit/data/v2 v2.0.1
+	github.com/bds421/rho-kit/data/v2 v2.0.2
 	github.com/bds421/rho-stripe v0.1.0
 	github.com/jackc/pgx/v5 v5.9.2
 )
 
 require (
-	github.com/bds421/rho-kit/core/v2 v2.0.1 // indirect
+	github.com/bds421/rho-kit/core/v2 v2.0.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
