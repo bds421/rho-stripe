@@ -138,12 +138,13 @@ func (o *Operations) SnapshotFor(ctx context.Context, subject SubjectID) (Snapsh
 		return Snapshot{}, err
 	}
 	snap := Snapshot{
-		SubjectID:  subject,
-		credits:  o.creditRepo,
-		ctx:      ctx,
-		features: map[string]bool{},
-		limits:   map[string]int64{},
-		hasLimit: map[string]bool{},
+		SubjectID: subject,
+		credits:   o.creditRepo,
+		ctx:       ctx,
+		features:  map[string]bool{},
+		limits:    map[string]int64{},
+		adds:      map[string]int64{},
+		hasLimit:  map[string]bool{},
 	}
 	now := o.now()
 	for _, sub := range subs {
@@ -185,7 +186,7 @@ func (o *Operations) SnapshotFor(ctx context.Context, subject SubjectID) (Snapsh
 // entitlements, computed at SnapshotFor() time. Treat as a snapshot —
 // it doesn't live-refresh.
 type Snapshot struct {
-	SubjectID       SubjectID
+	SubjectID     SubjectID
 	PeriodEnd     time.Time
 	TrialEndsAt   *time.Time
 	anyActive     bool
@@ -193,8 +194,16 @@ type Snapshot struct {
 	isTrialing    bool
 	planKeys      []string
 	features      map[string]bool
-	limits        map[string]int64
-	hasLimit      map[string]bool
+
+	// limits holds the MAX across all `limit.<name>` declarations
+	// (tier-upgrade semantics — higher tier wins).
+	limits map[string]int64
+	// adds holds the SUM across all `limit.<name>.add` declarations
+	// (additive-addon semantics — seat packs, storage packs, etc.).
+	// IntLimit() returns limits[name] + adds[name] so the two aggregation
+	// modes compose: a base tier sets the floor, addons stack on top.
+	adds     map[string]int64
+	hasLimit map[string]bool
 
 	// For deferred CreditsRemaining lookups.
 	credits credits.CreditRepo
@@ -232,9 +241,32 @@ func (s Snapshot) HasFeature(key string) bool { return s.features[key] }
 // (math.MaxInt64, true) so apps can write `currentSeats >= limit`
 // uniformly without a special branch (it'll be false for any
 // realistic currentSeats).
+//
+// # Aggregation across multiple plans
+//
+//   - `limit.<name>` declarations across plans are MAX-aggregated
+//     (higher tier wins — Pro and Enterprise on the same subject
+//     yields the Enterprise cap).
+//   - `limit.<name>.add` declarations are SUM-aggregated (additive
+//     addons — a base plan with `limit.storage_gb=100` plus two
+//     `limit.storage_gb.add=50` storage-pack addons yields 200).
+//   - The returned value is MAX(base) + SUM(adds), saturated when
+//     base is "unlimited" (math.MaxInt64).
 func (s Snapshot) IntLimit(key string) (value int64, has bool) {
-	v, ok := s.limits[key]
-	return v, ok && s.hasLimit[key]
+	if !s.hasLimit[key] {
+		return 0, false
+	}
+	base := s.limits[key]
+	add := s.adds[key]
+	if base == math.MaxInt64 {
+		// Unlimited base saturates any finite add.
+		return math.MaxInt64, true
+	}
+	// Guard against overflow when add is huge or close to MaxInt64.
+	if add > math.MaxInt64-base {
+		return math.MaxInt64, true
+	}
+	return base + add, true
 }
 
 // CreditsRemaining returns the subject's current balance in the
@@ -268,16 +300,36 @@ func (s Snapshot) PlanKeys() []string {
 // --- helpers ---
 
 func mergeMetadata(snap *Snapshot, meta map[string]string) {
+	const (
+		featurePrefix = "feature."
+		limitPrefix   = "limit."
+		addSuffix     = ".add"
+	)
 	for k, v := range meta {
 		switch {
-		case len(k) > 8 && k[:8] == "feature.":
-			name := k[8:]
+		case len(k) > len(featurePrefix) && k[:len(featurePrefix)] == featurePrefix:
+			name := k[len(featurePrefix):]
 			if v != "" && v != "false" && v != "0" {
 				snap.features[name] = true
 			}
-		case len(k) > 6 && k[:6] == "limit.":
-			name := k[6:]
+		case len(k) > len(limitPrefix) && k[:len(limitPrefix)] == limitPrefix:
+			name := k[len(limitPrefix):]
+			// Distinguish `limit.X.add` (additive addon, SUM-aggregated)
+			// from `limit.X` (base limit, MAX-aggregated). Strip the
+			// `.add` suffix once detected so both contribute to the same
+			// logical limit name in the snapshot.
+			additive := false
+			if len(name) > len(addSuffix) && name[len(name)-len(addSuffix):] == addSuffix {
+				additive = true
+				name = name[:len(name)-len(addSuffix)]
+			}
 			if v == "unlimited" {
+				// "unlimited" is only meaningful as a base; treating it
+				// as an additive contribution would silently make every
+				// addon-namespaced cap MaxInt64. Reject silently.
+				if additive {
+					continue
+				}
 				if cur, ok := snap.limits[name]; !ok || math.MaxInt64 > cur {
 					snap.limits[name] = math.MaxInt64
 				}
@@ -288,7 +340,9 @@ func mergeMetadata(snap *Snapshot, meta map[string]string) {
 			if err != nil {
 				continue
 			}
-			if cur, ok := snap.limits[name]; !ok || parsed > cur {
+			if additive {
+				snap.adds[name] += parsed
+			} else if cur, ok := snap.limits[name]; !ok || parsed > cur {
 				snap.limits[name] = parsed
 			}
 			snap.hasLimit[name] = true

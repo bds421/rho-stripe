@@ -224,3 +224,136 @@ func TestSnapshot_CancelledSubscriptionIsNotActive(t *testing.T) {
 var _ = func(o *plans.Operations) {
 	_, _ = o.SnapshotFor(context.Background(), "x")
 }
+
+// addonSpec exercises the `limit.X.add` SUM-aggregated suffix.
+// "pro" sets a base cap of storage_gb=100; "storage_pack" addon
+// declares limit.storage_gb.add=50 — a customer on both should see
+// 150, and a customer on pro + two storage_packs should see 200.
+func addonSpec() *catalog.Spec {
+	return catalog.MustSpec(catalog.Spec{
+		Namespace: "addon_demo",
+		Products: map[string]catalog.Product{
+			"pro": {
+				Name: "Pro", TaxCategory: catalog.TaxCategorySaaSBusiness,
+				Metadata: map[string]string{
+					"limit.storage_gb": "100",
+					"limit.max_seats":  "5",
+				},
+				Prices: map[string]catalog.Price{
+					"monthly_eur": {Amount: 4900, Currency: "eur",
+						Type: catalog.PriceTypeRecurring, Interval: catalog.IntervalMonth},
+				},
+			},
+			"storage_pack": {
+				Name: "Storage pack", TaxCategory: catalog.TaxCategorySaaSBusiness,
+				Metadata: map[string]string{
+					"limit.storage_gb.add": "50",
+				},
+				Prices: map[string]catalog.Price{
+					"monthly_eur": {Amount: 900, Currency: "eur",
+						Type: catalog.PriceTypeRecurring, Interval: catalog.IntervalMonth},
+				},
+			},
+			"enterprise": {
+				Name: "Enterprise", TaxCategory: catalog.TaxCategorySaaSBusiness,
+				Metadata: map[string]string{
+					"limit.storage_gb": "unlimited",
+				},
+				Prices: map[string]catalog.Price{
+					"custom_eur": {Amount: 1, Currency: "eur",
+						Type: catalog.PriceTypeRecurring, Interval: catalog.IntervalYear},
+				},
+			},
+		},
+	})
+}
+
+func subForNS(ns, subj, productKey, priceKey, stripeIDSuffix string, status subscriptions.Status) *subscriptions.Subscription {
+	return &subscriptions.Subscription{
+		StripeID:         "sub_" + stripeIDSuffix,
+		SubjectID:        subscriptions.SubjectID(subj),
+		Status:           status,
+		CurrentPeriodEnd: time.Now().Add(20 * 24 * time.Hour),
+		Items: []subscriptions.SubscriptionItem{
+			{StripeID: "si_" + stripeIDSuffix, PriceKey: ns + "." + productKey + "." + priceKey, Quantity: 1},
+		},
+	}
+}
+
+func TestSnapshot_AdditiveLimit_BasePlus1Addon(t *testing.T) {
+	repo := subscriptions.NewMemoryRepo()
+	_ = repo.Upsert(t.Context(), subForNS("addon_demo", "org_a", "pro", "monthly_eur", "pro", subscriptions.StatusActive))
+	_ = repo.Upsert(t.Context(), subForNS("addon_demo", "org_a", "storage_pack", "monthly_eur", "pack1", subscriptions.StatusActive))
+	ops := plans.New(plans.Config{Spec: addonSpec(), SubRepo: repo, CreditRepo: nil})
+
+	snap, _ := ops.SnapshotFor(t.Context(), "org_a")
+	got, has := snap.IntLimit("storage_gb")
+	if !has {
+		t.Fatal("storage_gb should be declared")
+	}
+	if got != 150 {
+		t.Errorf("storage_gb = %d, want 150 (100 base + 50 addon)", got)
+	}
+}
+
+func TestSnapshot_AdditiveLimit_BasePlus2Addons(t *testing.T) {
+	repo := subscriptions.NewMemoryRepo()
+	_ = repo.Upsert(t.Context(), subForNS("addon_demo", "org_b", "pro", "monthly_eur", "pro", subscriptions.StatusActive))
+	_ = repo.Upsert(t.Context(), subForNS("addon_demo", "org_b", "storage_pack", "monthly_eur", "pack1", subscriptions.StatusActive))
+	_ = repo.Upsert(t.Context(), subForNS("addon_demo", "org_b", "storage_pack", "monthly_eur", "pack2", subscriptions.StatusActive))
+	ops := plans.New(plans.Config{Spec: addonSpec(), SubRepo: repo, CreditRepo: nil})
+
+	snap, _ := ops.SnapshotFor(t.Context(), "org_b")
+	got, has := snap.IntLimit("storage_gb")
+	if !has || got != 200 {
+		t.Errorf("storage_gb = %d, want 200 (100 base + 50 + 50)", got)
+	}
+}
+
+func TestSnapshot_AdditiveLimit_OnlyBase(t *testing.T) {
+	// No addon → just base, addon path doesn't double-count or break.
+	repo := subscriptions.NewMemoryRepo()
+	_ = repo.Upsert(t.Context(), subForNS("addon_demo", "org_c", "pro", "monthly_eur", "pro", subscriptions.StatusActive))
+	ops := plans.New(plans.Config{Spec: addonSpec(), SubRepo: repo, CreditRepo: nil})
+
+	snap, _ := ops.SnapshotFor(t.Context(), "org_c")
+	got, has := snap.IntLimit("storage_gb")
+	if !has || got != 100 {
+		t.Errorf("storage_gb = %d, want 100 (base, no addon)", got)
+	}
+}
+
+func TestSnapshot_AdditiveLimit_UnlimitedBaseSaturates(t *testing.T) {
+	// Enterprise (unlimited storage) + storage_pack: the +50 must NOT
+	// turn unlimited into MaxInt64-50 via integer overflow.
+	repo := subscriptions.NewMemoryRepo()
+	_ = repo.Upsert(t.Context(), subForNS("addon_demo", "org_d", "enterprise", "custom_eur", "ent", subscriptions.StatusActive))
+	_ = repo.Upsert(t.Context(), subForNS("addon_demo", "org_d", "storage_pack", "monthly_eur", "pack", subscriptions.StatusActive))
+	ops := plans.New(plans.Config{Spec: addonSpec(), SubRepo: repo, CreditRepo: nil})
+
+	snap, _ := ops.SnapshotFor(t.Context(), "org_d")
+	got, has := snap.IntLimit("storage_gb")
+	if !has {
+		t.Fatal("storage_gb should be declared (via enterprise)")
+	}
+	if got != math.MaxInt64 {
+		t.Errorf("storage_gb = %d, want math.MaxInt64 (unlimited base saturates)", got)
+	}
+}
+
+func TestSnapshot_AdditiveLimit_AddonOnlyNoBase(t *testing.T) {
+	// Edge case: customer holds only the storage_pack (no Pro). The
+	// addon contributes its 50 GB but there's no base, so IntLimit
+	// returns (50, true). This is a catalog-modeling concern (apps
+	// usually require the base), not a lib invariant — but the lib
+	// shouldn't crash or report has=false.
+	repo := subscriptions.NewMemoryRepo()
+	_ = repo.Upsert(t.Context(), subForNS("addon_demo", "org_e", "storage_pack", "monthly_eur", "pack", subscriptions.StatusActive))
+	ops := plans.New(plans.Config{Spec: addonSpec(), SubRepo: repo, CreditRepo: nil})
+
+	snap, _ := ops.SnapshotFor(t.Context(), "org_e")
+	got, has := snap.IntLimit("storage_gb")
+	if !has || got != 50 {
+		t.Errorf("storage_gb = %d / has=%v, want (50, true)", got, has)
+	}
+}
