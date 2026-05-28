@@ -9,6 +9,18 @@ on:
     branches: [main]
   pull_request:
 
+# Cancel in-flight runs for the same ref when a new push lands — wasted
+# minutes on superseded commits add up across PR iterations.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  # Pin staticcheck to a known-good release so CI is reproducible and
+  # the binary can be cached (vs `@latest` which re-downloads + rebuilds
+  # the tool on every run). v0.7.0 == staticcheck branded as "2026.1".
+  STATICCHECK_VERSION: "v0.7.0"
+
 jobs:
   unit:
     name: Unit tests + race detector
@@ -19,22 +31,27 @@ jobs:
         with:
           go-version: stable
           check-latest: true
-      - name: Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: ${{ runner.os }}-go-
+          # Built-in cache covers ~/.cache/go-build + ~/go/pkg/mod;
+          # `cache-dependency-path` includes the postgres sub-module's
+          # go.sum so dep changes there invalidate the cache too.
+          cache-dependency-path: '**/go.sum'
+      - name: Download modules
+        run: go mod download
       - name: go mod verify
         run: go mod verify
       - name: go vet
         run: go vet ./...
+      - name: Cache staticcheck binary
+        id: cache-staticcheck
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin/staticcheck
+          key: ${{ runner.os }}-staticcheck-${{ env.STATICCHECK_VERSION }}
+      - name: Install staticcheck
+        if: steps.cache-staticcheck.outputs.cache-hit != 'true'
+        run: go install honnef.co/go/tools/cmd/staticcheck@${{ env.STATICCHECK_VERSION }}
       - name: staticcheck
-        run: |
-          go install honnef.co/go/tools/cmd/staticcheck@latest
-          staticcheck ./...
+        run: ~/go/bin/staticcheck ./...
       - name: go build
         run: go build ./...
       - name: Unit tests
@@ -64,14 +81,10 @@ jobs:
         with:
           go-version: stable
           check-latest: true
-      - name: Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: ${{ runner.os }}-go-
+          cache-dependency-path: '**/go.sum'
+      - name: Download modules (postgres sub-module)
+        working-directory: repos/postgres
+        run: go mod download
       - name: Postgres integration tests
         working-directory: repos/postgres
         env:
@@ -87,6 +100,12 @@ jobs:
         with:
           go-version: stable
           check-latest: true
+          # Fuzz job previously had no cache — first run downloads + builds
+          # everything from scratch. Adding the cache cuts ~30s off cold
+          # runs and shares the module cache with the unit job.
+          cache-dependency-path: '**/go.sum'
+      - name: Download modules
+        run: go mod download
       - name: Fuzz - refund parser (10s)
         run: go test -fuzz=FuzzApplyRefundReversal -fuzztime=10s -run=NoneShouldMatch ./credits/
       - name: Fuzz - webhook handle (10s)
@@ -105,6 +124,7 @@ jobs:
         with:
           go-version: stable
           check-latest: true
+          cache-dependency-path: '**/go.sum'
       - name: Check for STRIPE_SECRET_KEY
         id: check_key
         env:
@@ -116,15 +136,9 @@ jobs:
             echo "have_key=false" >> "$GITHUB_OUTPUT"
             echo "::notice::STRIPE_SECRET_KEY not set in repo secrets; skipping live tests."
           fi
-      - name: Cache Go modules
+      - name: Download modules
         if: steps.check_key.outputs.have_key == 'true'
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: ${{ runner.os }}-go-
+        run: go mod download
       - name: Pre-test cleanup (purge stale live_test_run artifacts)
         if: steps.check_key.outputs.have_key == 'true'
         env:
