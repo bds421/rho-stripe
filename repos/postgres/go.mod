@@ -7,7 +7,7 @@ require (
 	github.com/bds421/rho-kit/data/lock/pgadvisory/v2 v2.0.1
 	github.com/bds421/rho-kit/data/v2 v2.0.1
 	github.com/bds421/rho-stripe v0.1.0
-	github.com/jackc/pgx/v5 v5.7.6
+	github.com/jackc/pgx/v5 v5.9.2
 )
 
 require (
@@ -23,7 +23,6 @@ require (
 	go.opentelemetry.io/otel v1.44.0 // indirect
 	go.opentelemetry.io/otel/metric v1.44.0 // indirect
 	go.opentelemetry.io/otel/trace v1.44.0 // indirect
-	golang.org/x/crypto v0.37.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 )
