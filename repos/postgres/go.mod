@@ -4,7 +4,7 @@ go 1.26.2
 
 require (
 	github.com/bds421/rho-kit/data/idempotency/pgstore/v2 v2.0.1
-	github.com/bds421/rho-kit/data/lock/pgadvisory/v2 v2.0.1
+	github.com/bds421/rho-kit/data/lock/pgadvisory/v2 v2.0.2
 	github.com/bds421/rho-kit/data/v2 v2.0.2
 	github.com/bds421/rho-stripe v0.1.0
 	github.com/jackc/pgx/v5 v5.9.2
