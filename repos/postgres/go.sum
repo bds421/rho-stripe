@@ -1,7 +1,7 @@
 github.com/bds421/rho-kit/core/v2 v2.0.2 h1:xgNw4eF9RGC4Hvq39jTPFQ0eN3FeHPpb7+lOrKnhkXQ=
 github.com/bds421/rho-kit/core/v2 v2.0.2/go.mod h1:XaiBe5WdOEreWL/9ab17kCxvfhIMW6HZMMwnBwfB3as=
-github.com/bds421/rho-kit/data/idempotency/pgstore/v2 v2.0.1 h1:ZDQtnb8bZWUJpPcbOeCwthVU1dXb2ydGai0rxu8r4Yk=
-github.com/bds421/rho-kit/data/idempotency/pgstore/v2 v2.0.1/go.mod h1:yKgITwjYsONsyiIetP3v9DuC6ccXt2h/zZEsTJznWrY=
+github.com/bds421/rho-kit/data/idempotency/pgstore/v2 v2.0.2 h1:LIu/+ARntQlZKXVimLgagu6C3zz648KC5X2gayDCLCg=
+github.com/bds421/rho-kit/data/idempotency/pgstore/v2 v2.0.2/go.mod h1:hQbYpFtmJlEz1NAUxt0FfpuSCyf2z3YqAUKka5yACb4=
 github.com/bds421/rho-kit/data/lock/pgadvisory/v2 v2.0.2 h1:mxRIj/nh8Wy9nezddkmdgF1dqFmoqG24Cd6zCAF8RNI=
 github.com/bds421/rho-kit/data/lock/pgadvisory/v2 v2.0.2/go.mod h1:vnelMkbffU23LaNwK7wgY6x0uWg/TC7xLZINhmKCbzs=
 github.com/bds421/rho-kit/data/v2 v2.0.2 h1:sl3d27w0P4vSDrdc2aKVGuphG5mTX9RZI9Aqx0wIb0w=
