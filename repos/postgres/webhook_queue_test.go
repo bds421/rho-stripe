@@ -53,13 +53,25 @@ func TestPostgresWebhookQueue_EnqueueAndDispatch(t *testing.T) {
 		}
 	}
 
-	// After successful dispatch the rows should be DELETEd.
-	var remaining int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM stripe_connector_webhook_queue`).Scan(&remaining); err != nil {
-		t.Fatalf("count: %v", err)
-	}
-	if remaining != 0 {
-		t.Errorf("expected 0 rows after dispatch, got %d", remaining)
+	// The row DELETE happens in the worker AFTER our dispatch callback returns,
+	// so it races the `done` signal we just drained — on a slow runner the last
+	// row(s) may not be gone the instant all 3 callbacks have fired. Poll until
+	// the queue drains (deterministic) rather than asserting once immediately,
+	// which flaked on CI ("expected 0 rows after dispatch, got 1").
+	drained := time.After(5 * time.Second)
+	for {
+		var remaining int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM stripe_connector_webhook_queue`).Scan(&remaining); err != nil {
+			t.Fatalf("count: %v", err)
+		}
+		if remaining == 0 {
+			break
+		}
+		select {
+		case <-drained:
+			t.Fatalf("expected 0 rows after dispatch, got %d", remaining)
+		case <-time.After(50 * time.Millisecond):
+		}
 	}
 }
 
