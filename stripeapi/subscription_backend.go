@@ -27,6 +27,10 @@ func NewSubscriptionBackend(sc *stripe.Client) *SubscriptionBackend {
 
 var _ subscriptions.Backend = (*SubscriptionBackend)(nil)
 
+// Implements the optional subject-scoped-reconcile capability (see
+// subscriptions.ReconcileSubject).
+var _ subscriptions.CustomerSubscriptionLister = (*SubscriptionBackend)(nil)
+
 // CancelAtPeriodEnd toggles the cancel_at_period_end flag on the
 // subscription. The subscription remains active until the current
 // period ends, at which point Stripe cancels it and fires the
@@ -163,6 +167,27 @@ func (b *SubscriptionBackend) ListSince(ctx context.Context, since time.Time) ([
 	for s, err := range b.sc.V1Subscriptions.List(ctx, params) {
 		if err != nil {
 			return nil, fmt.Errorf("stripe.Subscriptions.List: %w", err)
+		}
+		out = append(out, projectSubscription(s))
+	}
+	return out, nil
+}
+
+// ListByCustomer fetches every subscription (status=all) for a single Stripe
+// customer. It satisfies subscriptions.CustomerSubscriptionLister, enabling the
+// subject-scoped Operations.ReconcileSubject — an O(one customer) reconcile for
+// the synchronous cancel/delete path, versus ListSince's global sweep.
+func (b *SubscriptionBackend) ListByCustomer(ctx context.Context, stripeCustomerID string) ([]subscriptions.ReconciledSubscription, error) {
+	params := &stripe.SubscriptionListParams{
+		Customer: stripe.String(stripeCustomerID),
+		Status:   stripe.String("all"),
+	}
+	params.Filters.AddFilter("limit", "", "100")
+
+	var out []subscriptions.ReconciledSubscription
+	for s, err := range b.sc.V1Subscriptions.List(ctx, params) {
+		if err != nil {
+			return nil, fmt.Errorf("stripe.Subscriptions.List(customer=%s): %w", stripeCustomerID, err)
 		}
 		out = append(out, projectSubscription(s))
 	}

@@ -413,6 +413,94 @@ func TestReconcileFromStripe_PropagatesListError(t *testing.T) {
 	}
 }
 
+// customerListerBackend embeds fakeBackend and adds the OPTIONAL
+// CustomerSubscriptionLister capability, so ReconcileSubject takes its fast
+// (subject-scoped) path. Plain fakeBackend deliberately omits it — that is what
+// the unsupported-backend test exercises.
+type customerListerBackend struct {
+	*fakeBackend
+	byCustomer      []subscriptions.ReconciledSubscription
+	byCustomerErr   error
+	byCustomerCalls []string
+}
+
+func (b *customerListerBackend) ListByCustomer(_ context.Context, customerID string) ([]subscriptions.ReconciledSubscription, error) {
+	b.byCustomerCalls = append(b.byCustomerCalls, customerID)
+	if b.byCustomerErr != nil {
+		return nil, b.byCustomerErr
+	}
+	return b.byCustomer, nil
+}
+
+func TestReconcileSubject_UpsertsForCustomer(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	be := &customerListerBackend{
+		fakeBackend: &fakeBackend{},
+		byCustomer: []subscriptions.ReconciledSubscription{
+			{
+				StripeID:         "sub_c1",
+				StripeCustomerID: "cus_target",
+				Status:           subscriptions.StatusActive,
+				Metadata:         map[string]string{"subject_id": "org_target"},
+				UpdatedUnix:      now.Unix(),
+			},
+		},
+	}
+	repo := subscriptions.NewMemoryRepo()
+	ops := subscriptions.New(subscriptions.Config{Backend: be, Repo: repo, Spec: nil, Cache: nil})
+
+	stats, err := ops.ReconcileSubject(t.Context(), "cus_target", nil)
+	if err != nil {
+		t.Fatalf("ReconcileSubject: %v", err)
+	}
+	if stats.Listed != 1 || stats.Upserted != 1 {
+		t.Errorf("stats wrong: %+v", stats)
+	}
+	if len(be.byCustomerCalls) != 1 || be.byCustomerCalls[0] != "cus_target" {
+		t.Errorf("ListByCustomer calls = %v; want [cus_target]", be.byCustomerCalls)
+	}
+	subs, _ := repo.ListBySubject(t.Context(), "org_target")
+	if len(subs) != 1 {
+		t.Errorf("repo has %d subs, want 1", len(subs))
+	}
+}
+
+func TestReconcileSubject_EmptyCustomerIsNoop(t *testing.T) {
+	be := &customerListerBackend{fakeBackend: &fakeBackend{}}
+	ops := subscriptions.New(subscriptions.Config{Backend: be, Repo: subscriptions.NewMemoryRepo(), Spec: nil, Cache: nil})
+
+	stats, err := ops.ReconcileSubject(t.Context(), "", nil)
+	if err != nil {
+		t.Fatalf("ReconcileSubject(empty): %v", err)
+	}
+	if stats.Listed != 0 || stats.Upserted != 0 {
+		t.Errorf("empty-customer stats wrong: %+v", stats)
+	}
+	if len(be.byCustomerCalls) != 0 {
+		t.Errorf("ListByCustomer should not be called for empty customer; got %v", be.byCustomerCalls)
+	}
+}
+
+func TestReconcileSubject_UnsupportedBackendReturnsSentinel(t *testing.T) {
+	// Plain fakeBackend does NOT implement CustomerSubscriptionLister.
+	ops := subscriptions.New(subscriptions.Config{Backend: &fakeBackend{}, Repo: subscriptions.NewMemoryRepo(), Spec: nil, Cache: nil})
+
+	_, err := ops.ReconcileSubject(t.Context(), "cus_x", nil)
+	if !errors.Is(err, subscriptions.ErrSubjectReconcileUnsupported) {
+		t.Errorf("err = %v; want ErrSubjectReconcileUnsupported", err)
+	}
+}
+
+func TestReconcileSubject_PropagatesListError(t *testing.T) {
+	be := &customerListerBackend{fakeBackend: &fakeBackend{}, byCustomerErr: errors.New("stripe down")}
+	ops := subscriptions.New(subscriptions.Config{Backend: be, Repo: subscriptions.NewMemoryRepo(), Spec: nil, Cache: nil})
+
+	_, err := ops.ReconcileSubject(t.Context(), "cus_x", nil)
+	if err == nil || errors.Is(err, subscriptions.ErrSubjectReconcileUnsupported) {
+		t.Errorf("err = %v; want a wrapped list error (not the unsupported sentinel)", err)
+	}
+}
+
 func TestOperations_PassesBackendErrorThrough(t *testing.T) {
 	be := &fakeBackend{err: errors.New("stripe boom")}
 	ops := subscriptions.New(subscriptions.Config{Backend: be, Repo: opsRepoWith(t, nil)})
