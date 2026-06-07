@@ -70,6 +70,12 @@ type CustomAmount struct {
 type Input struct {
 	SubjectID     SubjectID
 	Actor       ActorID // optional
+	// CustomerEmail optionally seeds the Stripe Customer's email when one is
+	// created for this subject (it is ignored when a Customer already exists,
+	// which keeps its email on file). Stripe's hosted Checkout page then
+	// PREFILLS the email field, and the Customer carries an email for receipts
+	// and invoicing. Apps pass the signed-in user's email here.
+	CustomerEmail string
 	LineItems   []LineItem
 	SuccessURL  string
 	CancelURL   string

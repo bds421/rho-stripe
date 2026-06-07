@@ -35,6 +35,9 @@ func NewCheckoutBackend(sc *stripe.Client) *CheckoutBackend {
 // Customer rather than duplicates.
 func (b *CheckoutBackend) CreateCustomer(ctx context.Context, p checkout.CustomerCreate) (checkout.StripeCustomerID, error) {
 	params := &stripe.CustomerCreateParams{}
+	if p.Email != "" {
+		params.Email = stripe.String(p.Email)
+	}
 	for k, v := range p.Metadata {
 		params.AddMetadata(k, v)
 	}
