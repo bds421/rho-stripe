@@ -21,7 +21,10 @@ type Backend interface {
 
 // CustomerCreate carries the fields needed to create a Stripe Customer.
 type CustomerCreate struct {
-	SubjectID  SubjectID
+	SubjectID SubjectID
+	// Email, when non-empty, is set on the created Stripe Customer so receipts
+	// and invoices have an address and the hosted Checkout page prefills it.
+	Email    string
 	Metadata map[string]string
 }
 

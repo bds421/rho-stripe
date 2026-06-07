@@ -102,7 +102,7 @@ func (c *Checkout) CreateSession(ctx context.Context, in Input) (Session, error)
 		}
 	}
 
-	customerID, err := c.resolveCustomer(ctx, in.SubjectID)
+	customerID, err := c.resolveCustomer(ctx, in.SubjectID, in.CustomerEmail)
 	if err != nil {
 		return Session{}, err
 	}
@@ -201,7 +201,7 @@ func (c *Checkout) resolveLineItems(items []LineItem) ([]SessionLineItem, Mode, 
 
 // resolveCustomer returns the existing Stripe Customer id for subject,
 // creating one (and persisting the mapping) if none exists.
-func (c *Checkout) resolveCustomer(ctx context.Context, subject SubjectID) (StripeCustomerID, error) {
+func (c *Checkout) resolveCustomer(ctx context.Context, subject SubjectID, email string) (StripeCustomerID, error) {
 	if id, ok, err := c.cfg.Customers.Get(ctx, subject); err != nil {
 		return "", fmt.Errorf("customers.Get: %w", err)
 	} else if ok {
@@ -210,6 +210,7 @@ func (c *Checkout) resolveCustomer(ctx context.Context, subject SubjectID) (Stri
 
 	created, err := c.cfg.Backend.CreateCustomer(ctx, CustomerCreate{
 		SubjectID: subject,
+		Email:     email,
 		Metadata: map[string]string{
 			meta.MetadataKeyNamespace: c.cfg.Namespace,
 			"subject_id":    string(subject),
