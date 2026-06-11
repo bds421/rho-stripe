@@ -1,5 +1,5 @@
-github.com/bds421/rho-kit/core/v2 v2.0.2 h1:xgNw4eF9RGC4Hvq39jTPFQ0eN3FeHPpb7+lOrKnhkXQ=
-github.com/bds421/rho-kit/core/v2 v2.0.2/go.mod h1:XaiBe5WdOEreWL/9ab17kCxvfhIMW6HZMMwnBwfB3as=
+github.com/bds421/rho-kit/core/v2 v2.1.0 h1:Xc0XAm1CDfhEyLqTErcd+1sN4uQXn1zjoLXVNSlr6Wk=
+github.com/bds421/rho-kit/core/v2 v2.1.0/go.mod h1:XaiBe5WdOEreWL/9ab17kCxvfhIMW6HZMMwnBwfB3as=
 github.com/bds421/rho-kit/data/v2 v2.0.2 h1:sl3d27w0P4vSDrdc2aKVGuphG5mTX9RZI9Aqx0wIb0w=
 github.com/bds421/rho-kit/data/v2 v2.0.2/go.mod h1:BDY1MMGEZMaEvlhZPudyOYdtd2Pct2RK76XMoIMh5/g=
 github.com/bds421/rho-kit/httpx/v2 v2.0.2 h1:0SvcNv40PjlqpK6YgIHTzMiIGjMkTiiTsTxjrpolKPY=
