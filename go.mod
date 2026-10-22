@@ -1,9 +1,9 @@
 module github.com/bds421/rho-stripe
 
-go 1.26.2
+go 1.26.8
 
 require (
-	github.com/bds421/rho-kit/core/v2 v2.0.2
+	github.com/bds421/rho-kit/core/v2 v2.10.1
 	github.com/bds421/rho-kit/data/v2 v2.0.2
 	github.com/bds421/rho-kit/httpx/v2 v2.0.2
 	github.com/prometheus/client_golang v1.24.1
