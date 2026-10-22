@@ -1,11 +1,11 @@
 module github.com/bds421/rho-stripe
 
-go 1.26.2
+go 1.26.8
 
 require (
-	github.com/bds421/rho-kit/core/v2 v2.0.2
-	github.com/bds421/rho-kit/data/v2 v2.0.2
-	github.com/bds421/rho-kit/httpx/v2 v2.0.2
+	github.com/bds421/rho-kit/core/v2 v2.10.1
+	github.com/bds421/rho-kit/data/v2 v2.10.1
+	github.com/bds421/rho-kit/httpx/v2 v2.10.1
 	github.com/prometheus/client_golang v1.24.1
 	github.com/stripe/stripe-go/v82 v82.5.1
 	go.opentelemetry.io/otel v1.45.0
@@ -13,11 +13,11 @@ require (
 )
 
 require (
-	github.com/bds421/rho-kit/observability/v2 v2.0.2 // indirect
-	github.com/bds421/rho-kit/resilience/v2 v2.0.2 // indirect
+	github.com/bds421/rho-kit/observability/v2 v2.10.1 // indirect
+	github.com/bds421/rho-kit/resilience/v2 v2.10.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/felixge/httpsnoop v1.0.4 // indirect
+	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -32,8 +32,8 @@ require (
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0 // indirect
 	go.opentelemetry.io/otel/metric v1.45.0 // indirect
-	golang.org/x/net v0.57.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.40.0 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
+	golang.org/x/net v0.60.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
+	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af // indirect
 )
